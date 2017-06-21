@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gonum/plot/vg"
+	"github.com/google/go-github/github"
 )
 
 const (
@@ -28,6 +29,10 @@ func main() {
 	token := flag.String("token", "", "access token for github")
 	start := flag.String("start-date", "", "start date of the graph, in format 2000-Jan-01 or 2000-Jan")
 	end := flag.String("end-date", "", "end date of the graph, in format 2000-Jan-01 or 2000-Jan")
+
+	activityStart := flag.String("issue-activity-start", "", "start date for issue activities")
+	activityEnd := flag.String("issue-activity-end", "", "end date for issue activities")
+
 	flag.Parse()
 
 	if *token == "" {
@@ -58,6 +63,20 @@ func main() {
 	drawTopReleaseDownloads(rc, per, "top_downloads.png")
 	buildImagesHTML("images.html", "total_issues.png", "open_issues.png", "open_fraction.png", "open_age.png", "solved_duration.png", "top_downloads.png")
 	fmt.Printf("saved images and browsing html\n")
+
+	activityStartTime := parseDateString(*activityStart)
+	activityEndTime := time.Now()
+	if len(*activityEnd) > 0 {
+		activityEndTime = parseDateString(*activityEnd)
+	}
+	fmt.Printf("issues opened from %v to %v: %d\n",
+		activityStartTime,
+		activityEndTime,
+		len(issuesOpenedSince(rc, activityStartTime, activityEndTime)))
+	fmt.Printf("issues closed from %v to %v: %d\n",
+		activityStartTime,
+		activityEndTime,
+		len(issuesClosedSince(rc, activityStartTime, activityEndTime)))
 
 	startBrowser("images.html")
 }
@@ -101,4 +120,24 @@ func startBrowser(url string) bool {
 	}
 	cmd := exec.Command(args[0], append(args[1:], url)...)
 	return cmd.Start() == nil
+}
+
+func issuesOpenedSince(rc *repoClient, begin, end time.Time) (ret []github.Issue) {
+	rc.WalkIssues(func(i github.Issue, isPullRequest bool) {
+		if isPullRequest || i.CreatedAt.Before(begin) || i.CreatedAt.After(end) {
+			return
+		}
+		ret = append(ret, i)
+	})
+	return ret
+}
+
+func issuesClosedSince(rc *repoClient, begin, end time.Time) (ret []github.Issue) {
+	rc.WalkIssues(func(i github.Issue, isPullRequest bool) {
+		if isPullRequest || i.ClosedAt == nil || i.ClosedAt.Before(begin) || i.ClosedAt.After(end) {
+			return
+		}
+		ret = append(ret, i)
+	})
+	return ret
 }
